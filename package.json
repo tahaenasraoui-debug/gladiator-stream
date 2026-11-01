@@ -1,0 +1,19 @@
+{
+  "name": "gladiator-stream-overlay",
+  "version": "1.0.0",
+  "description": "Zero-latency Twitch chat interactive boss-raid overlay for OBS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "tmi.js": "^1.8.5",
+    "ws": "^8.22.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

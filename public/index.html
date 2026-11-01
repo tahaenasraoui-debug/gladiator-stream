@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0" />
+  <title>Gladiator Stream - OBS Overlay</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Main 1920x1080 Transparent Container -->
+  <div id="overlay-container">
+
+    <!-- Persistent Top/Mid Arena HUD -->
+    <div id="hud-layer">
+      <!-- Boss Health Bar & Status -->
+      <div id="boss-hud">
+        <div class="boss-title-row">
+          <span id="boss-name">MALAKOR THE ANNIHILATOR</span>
+          <span id="boss-status-badge" class="badge-idle">IDLE</span>
+        </div>
+        <div class="hp-bar-outer">
+          <div id="boss-hp-damage-trail"></div>
+          <div id="boss-hp-fill"></div>
+          <span id="boss-hp-text">2500 / 2500 HP</span>
+        </div>
+        <div class="hud-sub-row">
+          <span id="active-gladiators">⚔️ Active Gladiators: 0</span>
+          <span class="command-hint">Commands: <b>!spawn warrior|archer|mage</b> • <b>!attack</b> • <b>!heal</b> • <b>!taunt</b></span>
+        </div>
+      </div>
+
+      <!-- Live Action Feed -->
+      <div id="action-feed"></div>
+    </div>
+
+    <!-- End-of-Round Victory Banner (Hidden during combat) -->
+    <div id="victory-banner" class="hidden">
+      <div class="victory-header">🏆 BOSS DEFEATED! 🏆</div>
+      <div id="victory-killer" class="victory-sub">Final Blow: ---</div>
+      <div class="leaderboard-title">TOP DAMAGE DEALERS</div>
+      <div id="leaderboard-list"></div>
+      <div id="victory-countdown">Next Boss Spawns in 30s...</div>
+    </div>
+
+    <!-- Optional Local Debug Toolbar (Only visible with ?debug=true) -->
+    <div id="debug-panel" class="hidden">
+      <div class="debug-title">🛠️ Hackathon Demo Simulator</div>
+      <button onclick="simCmd('!spawn warrior')">+ Spawn Warrior</button>
+      <button onclick="simCmd('!spawn archer')">+ Spawn Archer</button>
+      <button onclick="simCmd('!spawn mage')">+ Spawn Mage</button>
+      <button onclick="simCrowdAttack()">⚔️ All Attack</button>
+      <button onclick="simCmd('!heal')">💚 Random Heal</button>
+      <button onclick="simCmd('!taunt')">🛡️ Random Taunt</button>
+    </div>
+
+    <!-- 1920x1080 Interactive Render Canvas -->
+    <canvas id="arena-canvas" width="1920" height="1080"></canvas>
+  </div>
+
+  <script src="arena.js"></script>
+</body>
+</html>
