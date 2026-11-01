@@ -1,10 +1,9 @@
-
 /**
  * GLADIATOR STREAM - 60FPS HTML5 Canvas Renderer & Dual-Mode Engine
- * Supports Authoritative Node.js WebSocket Mode + Standalone GitHub Pages Demo Mode
  */
 const canvas = document.getElementById('arena-canvas');
 const ctx = canvas.getContext('2d');
+const overlayContainer = document.getElementById('overlay-container');
 
 // HUD DOM References
 const bossHpFill = document.getElementById('boss-hp-fill');
@@ -18,20 +17,37 @@ const victoryKillerEl = document.getElementById('victory-killer');
 const leaderboardListEl = document.getElementById('leaderboard-list');
 const victoryCountdownEl = document.getElementById('victory-countdown');
 
-const isGitHubPages = window.location.hostname.includes('github.io');
-const isDebugParam = new URLSearchParams(window.location.search).get('debug') === 'true';
-let standaloneMode = isGitHubPages;
+// --- CONSTANTS & STANDALONE STATE (Declared first to prevent ReferenceError) ---
+const GROUND_Y = 960;
 
-// Show debug simulator toolbar if ?debug=true OR hosted on GitHub Pages
-if (isDebugParam || isGitHubPages) {
-  document.getElementById('debug-panel').classList.remove('hidden');
-  if (isGitHubPages) {
-    document.body.style.backgroundColor = '#090d16'; // Dark preview backdrop for browser visitors
+const CLASSES = {
+  warrior: { hp: 160, atk: 24, range: 110, speed: 7, color: '#ef4444', label: 'WARRIOR' },
+  archer:  { hp: 100, atk: 32, range: 480, speed: 9, color: '#22c55e', label: 'ARCHER' },
+  mage:    { hp: 90,  atk: 38, range: 380, speed: 6, color: '#3b82f6', label: 'MAGE' }
+};
+
+const localGame = {
+  running: false,
+  phase: 'COMBAT',
+  victoryTimer: 0,
+  players: new Map(),
+  leaderboard: [],
+  boss: {
+    name: 'MALAKOR THE ANNIHILATOR',
+    x: 960,
+    y: GROUND_Y,
+    hp: 2500,
+    maxHp: 2500,
+    baseHp: 2500,
+    state: 'IDLE',
+    stateTimer: 75,
+    target: null,
+    facing: 1,
+    attackRadius: 240
   }
-}
+};
 
 // --- CLIENT INTERPOLATION & VISUAL STATE ---
-const GROUND_Y = 960;
 const clientPlayers = new Map();
 const particles = [];
 const floatingTexts = [];
@@ -53,34 +69,62 @@ const clientBoss = {
   attackRadius: 240
 };
 
-// --- WEBSOCKET CONNECTION WITH STANDALONE FALLBACK ---
+// Detect GitHub Pages, file:// protocol, or ?debug=true
+const isStaticHost = window.location.hostname.includes('github.io') || window.location.protocol === 'file:';
+const isDebugParam = new URLSearchParams(window.location.search).get('debug') === 'true';
+let standaloneMode = isStaticHost;
+
+function fitOverlayToWindow() {
+  if (!document.body.classList.contains('demo-mode')) return;
+  const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  overlayContainer.style.transform = `scale(${scale})`;
+}
+
+if (isDebugParam || isStaticHost) {
+  document.getElementById('debug-panel').classList.remove('hidden');
+  document.body.classList.add('demo-mode');
+  fitOverlayToWindow();
+  window.addEventListener('resize', fitOverlayToWindow);
+}
+
+// --- WEBSOCKET CONNECTION WITH AUTOMATIC STANDALONE FALLBACK ---
 function connectWebSocket() {
   if (standaloneMode) {
     startStandaloneEngine();
     return;
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${window.location.host}`);
+  try {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}`);
 
-  ws.onmessage = (event) => {
-    const { type, payload } = JSON.parse(event.data);
-    handleServerMessage(type, payload);
-  };
+    ws.onmessage = (event) => {
+      const { type, payload } = JSON.parse(event.data);
+      handleServerMessage(type, payload);
+    };
 
-  ws.onerror = () => {
-    if (!standaloneMode) {
-      standaloneMode = true;
-      document.getElementById('debug-panel').classList.remove('hidden');
-      startStandaloneEngine();
-    }
-  };
+    ws.onerror = () => {
+      enableStandaloneFallback();
+    };
 
-  ws.onclose = () => {
-    if (!standaloneMode) {
-      setTimeout(connectWebSocket, 2000);
-    }
-  };
+    ws.onclose = () => {
+      if (!standaloneMode) {
+        enableStandaloneFallback();
+      }
+    };
+  } catch (err) {
+    enableStandaloneFallback();
+  }
+}
+
+function enableStandaloneFallback() {
+  if (standaloneMode) return;
+  standaloneMode = true;
+  document.getElementById('debug-panel').classList.remove('hidden');
+  document.body.classList.add('demo-mode');
+  fitOverlayToWindow();
+  window.addEventListener('resize', fitOverlayToWindow);
+  startStandaloneEngine();
 }
 
 // --- SERVER PACKET HANDLER ---
@@ -233,11 +277,7 @@ function showVictoryBanner(killer, leaderboard) {
 // --- VFX SPAWNERS ---
 function spawnFloatingText(x, y, text, color, style) {
   floatingTexts.push({
-    x,
-    y,
-    text,
-    color,
-    style,
+    x, y, text, color, style,
     vy: style === 'CRIT' ? -2.4 : -1.6,
     alpha: 1.0,
     scale: style === 'CRIT' ? 1.35 : 1.0
@@ -249,8 +289,7 @@ function spawnParticleBurst(x, y, color, count) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 2 + Math.random() * 8;
     particles.push({
-      x,
-      y,
+      x, y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - 3,
       radius: 3 + Math.random() * 4,
@@ -265,12 +304,9 @@ function spawnAttackVisual(vfx) {
     spawnParticleBurst(vfx.toX, vfx.toY, vfx.color, 12);
   } else {
     projectiles.push({
-      x: vfx.fromX,
-      y: vfx.fromY,
-      toX: vfx.toX,
-      toY: vfx.toY,
-      role: vfx.role,
-      color: vfx.color,
+      x: vfx.fromX, y: vfx.fromY,
+      toX: vfx.toX, toY: vfx.toY,
+      role: vfx.role, color: vfx.color,
       progress: 0
     });
   }
@@ -612,37 +648,13 @@ function drawFloatingTexts() {
 }
 
 // ============================================================================
-// STANDALONE CLIENT-SIDE ENGINE (For GitHub Pages Static Live Demo)
+// STANDALONE CLIENT-SIDE ENGINE (GitHub Pages / Static Browser Demo Mode)
 // ============================================================================
-const CLASSES = {
-  warrior: { hp: 160, atk: 24, range: 110, speed: 7, color: '#ef4444', label: 'WARRIOR' },
-  archer:  { hp: 100, atk: 32, range: 480, speed: 9, color: '#22c55e', label: 'ARCHER' },
-  mage:    { hp: 90,  atk: 38, range: 380, speed: 6, color: '#3b82f6', label: 'MAGE' }
-};
-
-const localGame = {
-  phase: 'COMBAT',
-  victoryTimer: 0,
-  players: new Map(),
-  leaderboard: [],
-  boss: {
-    name: 'MALAKOR THE ANNIHILATOR',
-    x: 960,
-    y: GROUND_Y,
-    hp: 2500,
-    maxHp: 2500,
-    baseHp: 2500,
-    state: 'IDLE',
-    stateTimer: 75,
-    target: null,
-    facing: 1,
-    attackRadius: 240
-  }
-};
-
 function startStandaloneEngine() {
-  addFeedEntry('Live Demo Mode active! Use the top-right controls.');
-  // Pre-spawn 3 demo gladiators so the arena is lively immediately
+  if (localGame.running) return;
+  localGame.running = true;
+
+  addFeedEntry('Live Demo Mode active! Use top-right buttons to interact.');
   handleLocalCommand('CodexHero', '!spawn warrior');
   handleLocalCommand('PixelMage', '!spawn mage');
   handleLocalCommand('StreamKnight', '!spawn archer');
@@ -828,7 +840,7 @@ function updateLocalGameTick() {
 // --- DEMO TOOLBAR BUTTON HANDLERS ---
 const demoNames = ['Nightbot', 'CodexHero', 'StreamKnight', 'PixelMage', 'xX_Slayer_Xx', 'GladiatorPrime', 'TwitchChamp'];
 
-function simCmd(command) {
+window.simCmd = function(command) {
   const randomUser = demoNames[Math.floor(Math.random() * demoNames.length)];
   if (standaloneMode) {
     handleLocalCommand(randomUser, command);
@@ -838,10 +850,13 @@ function simCmd(command) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: randomUser, message: command })
+  }).catch(() => {
+    enableStandaloneFallback();
+    handleLocalCommand(randomUser, command);
   });
-}
+};
 
-function simCrowdAttack() {
+window.simCrowdAttack = function() {
   if (standaloneMode) {
     Array.from(localGame.players.values()).forEach((p, idx) => {
       setTimeout(() => handleLocalCommand(p.displayName, '!attack'), idx * 70);
@@ -857,7 +872,7 @@ function simCrowdAttack() {
       });
     }, idx * 80);
   });
-}
+};
 
 connectWebSocket();
 requestAnimationFrame(renderLoop);
